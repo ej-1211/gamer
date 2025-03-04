@@ -35,6 +35,10 @@ double previous_center_z;
 // declare the potential minimum last step
 double min_pot_last[3] ;
 
+// declare the output profile's dt and the ideal output t
+double ideal_output_t = 0.0;
+double output_profile_dt;
+
 // declare the radius and density information
 // declare a global variable for the profile
 Profile_t *Prof_[1];
@@ -142,8 +146,7 @@ void SetParameter()
 
    if ( END_STEP < 0 ) {
       END_STEP = End_Step_Default;
-      PRINT_RESET_PARA( END_STEP, FORMAT_LONG, "" );
-   }
+      PRINT_RESET_PARA( END_STEP, FORMAT_LONG, "" ); }
 
    if ( END_T < 0.0 ) {
       END_T = End_T_Default;
@@ -172,6 +175,7 @@ void SetParameter()
    ReadPara->Add( "previous_center_x",           &previous_center_x,        NoDef_double,  NoMin_double,     NoMax_double      );
    ReadPara->Add( "previous_center_y",           &previous_center_y,        NoDef_double,  NoMin_double,     NoMax_double      );
    ReadPara->Add( "previous_center_z",           &previous_center_z,        NoDef_double,  NoMin_double,     NoMax_double      );
+   ReadPara->Add( "Output_Profile_DT",           &output_profile_dt,        NoDef_double,  NoMin_double,     NoMax_double      );
 
    ReadPara->Read( FileName );
    delete ReadPara;
@@ -260,55 +264,70 @@ double interpolate(const double* x, const double* y, int size, double xi) {
 
 
 double CalculateEnclosedMass(const double* radius, int radius_size,
-                             const double* density, 
+                             const double* density, const double* weight,
                              double user_input_radius){
 
 // Allocate arrays dynamically
-double* RADIUS = new double[radius_size];
-double* r_mid = new double[radius_size + 1];
-double* volume = new double[radius_size];
+//double* RADIUS = new double[radius_size];
+//double* r_mid = new double[radius_size + 1];
+//double* volume = new double[radius_size];
 double* mass = new double[radius_size];
 double* cumulative_mass = new double[radius_size];
 
-
-// Perform the calculations
-for (int i = 0; i < radius_size; ++i) {
-	RADIUS[i] = radius[i]; // UNIT_L * cm_to_kpc;
-}
-r_mid[0] = 0;
-for (int i = 0; i < radius_size - 1; ++i) {
-	r_mid[i + 1] = (RADIUS[i] + RADIUS[i + 1]) / 2;
-}
-r_mid[radius_size] = RADIUS[radius_size - 1];
-for (int i = 0; i < radius_size; ++i) {
-        volume[i] = (4.0 / 3.0) * M_PI * (pow(r_mid[i + 1], 3) - pow(r_mid[i], 3));
-        mass[i] = density[i] * volume[i]; // UNIT_D * g_to_Msun / pow(cm_to_kpc, 3) * volume[i];
-    }
-
 double sum_mass = 0;
-    for (int i = 0; i < radius_size; ++i) {
-        sum_mass += mass[i];
-        cumulative_mass[i] = sum_mass;
-    }
-
-int index = 0;
-double min_diff = std::abs(r_mid[0] - user_input_radius);
-for (int i = 1; i < radius_size + 1; ++i) {
-	double diff = std::abs(r_mid[i] - user_input_radius);
-	if (diff < min_diff) {
-            min_diff = diff;
-            index = i;
-        }
+for (int i=0; i<radius_size;++i){
+	mass[i] = density[i] * weight[i];
+	sum_mass += mass[i];
+	cumulative_mass[i] = sum_mass;
 }
 
-double m = (cumulative_mass[index] - cumulative_mass[index - 1]) / (r_mid[index] - r_mid[index - 1]);
-double b = cumulative_mass[index - 1] - m * r_mid[index - 1];
-double interpolated_mass = m * user_input_radius + b;
+
+
+
+//// Perform the calculations
+//for (int i = 0; i < radius_size; ++i) {
+//	RADIUS[i] = radius[i]; // UNIT_L * cm_to_kpc;
+//}
+//r_mid[0] = 0;
+//for (int i = 0; i < radius_size - 1; ++i) {
+//	r_mid[i + 1] = (RADIUS[i] + RADIUS[i + 1]) / 2;
+//}
+//r_mid[radius_size] = RADIUS[radius_size - 1];
+//for (int i = 0; i < radius_size; ++i) {
+//        volume[i] = (4.0 / 3.0) * M_PI * (pow(r_mid[i + 1], 3) - pow(r_mid[i], 3));
+//        mass[i] = density[i] * volume[i]; // UNIT_D * g_to_Msun / pow(cm_to_kpc, 3) * volume[i];
+//    }
+//
+//double sum_mass = 0;
+//    for (int i = 0; i < radius_size; ++i) {
+//        sum_mass += mass[i];
+//        cumulative_mass[i] = sum_mass;
+//    }
+//
+//int index = 0;
+//double min_diff = std::abs(r_mid[0] - user_input_radius);
+//for (int i = 1; i < radius_size + 1; ++i) {
+//	double diff = std::abs(r_mid[i] - user_input_radius);
+//	if (diff < min_diff) {
+//            min_diff = diff;
+//            index = i;
+//        }
+//
+//}
+//
+//if ( r_mid[index] - user_input_radius < 0){
+//	index += 1;
+//}
+//
+//
+//double m = (cumulative_mass[index] - cumulative_mass[index - 1]) / (r_mid[index] - r_mid[index - 1]);
+//double b = cumulative_mass[index - 1] - m * r_mid[index - 1];
+//double interpolated_mass = m * user_input_radius + b;
 
 //double interpolated_mass_new = interpolate(r_mid, cumulative_mass, radius_size + 1, user_input_radius);
-double interpolated_mass_new = interpolate(RADIUS, cumulative_mass, radius_size, user_input_radius);
+double interpolated_mass_new = interpolate(radius, cumulative_mass, radius_size, user_input_radius);
 
-if (MPI_Rank == 0 ) Aux_Message(stdout, "Interpolated mass at initial radius is %15.5e\n",interpolated_mass);
+//if (MPI_Rank == 0 ) Aux_Message(stdout, "Interpolated mass at initial radius is %15.5e\n",interpolated_mass);
 if (MPI_Rank == 0 ) Aux_Message(stdout, "New Interpolated mass at initial radius is %15.5e\n",interpolated_mass_new);
 
 if ( MPI_Rank == 0 ){
@@ -318,14 +337,14 @@ if ( MPI_Rank == 0 ){
       fprintf( File, "#%19s  %21s  %21s \n", "Radius", "density", "enclosed_mass" );
       for (int b=0; b<radius_size; b++)
          fprintf( File, "%20.14e  %21.14e  %21.14e \n",
-                  RADIUS[b], density[b], cumulative_mass[b]  );
+                  radius[b], density[b], cumulative_mass[b]  );
       fclose( File );
    
 }
 
-delete[] RADIUS;
-delete[] r_mid;
-delete[] volume;
+//delete[] RADIUS;
+//delete[] r_mid;
+//delete[] volume;
 delete[] mass;
 delete[] cumulative_mass;
 
@@ -470,9 +489,15 @@ void Aux_Record_User_GC()
 
 
     // C. Output the profile if the step is 0
-    if ( Time[0] == 0.0 )
+    //if ( Time[0] == 0.0 )
+    if ( fabs(Time[0] - ideal_output_t) <= dTime_AllLv[0] )
     {
+        // update the ideal output t
+    //    Aux_Message(stdout,"[%02d] ideal_output_t is  %21.5f, dt is %21.5f \n",MPI_Rank, ideal_output_t, dTime_AllLv[0]);
+        ideal_output_t += output_profile_dt;
+         
         const double      Center[3]      = { Extrema.Coord[0],Extrema.Coord[1],Extrema.Coord[2] };
+        //const double      Center[3]      = { 0.5*amr->BoxSize[0], 0.5*amr->BoxSize[0], 0.5*amr->BoxSize[0]};
         const double      MaxRadius      = 0.6*amr->BoxSize[0]; // 0.6 to make sure every cell is counted
         const double      MinBinSize     = amr->dh[MAX_LEVEL];
         const bool        LogBin         = true;
@@ -498,7 +523,7 @@ void Aux_Record_User_GC()
            for (int p=0; p<NProf; p++)
            {
               char Filename[MAX_STRING];
-              sprintf( Filename, "Density_Profile_%d.txt",p+1 );
+              sprintf( Filename, "Density_Profile_%5f.txt",Time[0] );
               FILE *File = fopen( Filename, "w" );
               fprintf( File, "#%19s  %21s  %21s  %10s\n", "Radius", "Data", "Weight", "Cells" );
               for (int b=0; b<Prof[p]->NBin; b++)
@@ -507,22 +532,23 @@ void Aux_Record_User_GC()
               fclose( File );
            }
         }
-
-        if ( OPT__INIT != INIT_BY_RESTART ) 
+        if ( OPT__INIT != INIT_BY_RESTART && Time[0]==0.0) 
         {
         
             double* radius = Prof[0]->Radius;
             double* density = Prof[0]->Data;
+            double* weight = Prof[0]->Weight;
             int radius_size = Prof[0]->NBin; // Number of bins
+
             
-            double enclosed_mass = CalculateEnclosedMass(radius, radius_size, density, GC_rr);
+            double enclosed_mass = CalculateEnclosedMass(radius, radius_size, density,weight, GC_rr);
             
             
             double vc = sqrt(NEWTON_G * enclosed_mass / GC_rr);
             
             double vc_relative = vc * enclosed_mass / (enclosed_mass + GC_mm);
         
-        if ( MPI_Rank == 0 ) 
+        if ( MPI_Rank == 0 && Time[0]==0.0) 
         {
            Aux_Message(stdout,"[%02d] velocity is %21.14e \n",MPI_Rank,vc);
         
@@ -536,14 +562,23 @@ void Aux_Record_User_GC()
         
         
 
-
+        if ( Time[0] == 0.0 ) // Change the velocity only when the time is 0
+	{
          for (long p=0; p<amr->Par->NPar_AcPlusInac; p++)
            {
+                amr->Par->Mass[p] = GC_mm;
+                amr->Par->PosX[p] = Extrema.Coord[0] + GC_rr*cos(GC_theta*M_PI/180);
+                amr->Par->PosY[p] = Extrema.Coord[1] + GC_rr*sin(GC_theta*M_PI/180);
+                amr->Par->PosZ[p] = Extrema.Coord[2];
                 amr->Par->VelX[p] = -vc*sin(GC_theta*M_PI/180);
         	amr->Par->VelY[p] = vc*cos(GC_theta*M_PI/180);
                 amr->Par->VelZ[p] = 0.0;
+                Aux_Message(stdout,"Update mass to     ( %21.7e ) \n", amr->Par->Mass[p]);
+                Aux_Message(stdout,"Update position to ( %21.7e , %21.7e , %21.7e ) \n",amr->Par->PosX[p],amr->Par->PosY[p],amr->Par->PosZ[p]);
+                Aux_Message(stdout,"Update velocity to ( %21.7e , %21.7e , %21.7e ) \n",amr->Par->VelX[p],amr->Par->VelY[p],amr->Par->VelZ[p]);
+		
            }
-        
+        }
         
         }
 
@@ -760,9 +795,9 @@ void Par_Init_ByFunction( const long NPar_ThisRank, const long NPar_AllRank,
    
    for (long p=0; p < NPar_ThisRank; p++)
    {  
-      ParMass[p] = GC_mm;
-      ParPosX[p] = amr->BoxCenter[0] + GC_rr*cos(GC_theta*M_PI/180);
-      ParPosY[p] = amr->BoxCenter[1] + GC_rr*sin(GC_theta*M_PI/180);
+      ParMass[p] = 1E-10; // to be updated later 
+      ParPosX[p] = amr->BoxCenter[0]+GC_rr*cos(GC_theta*M_PI/180);
+      ParPosY[p] = amr->BoxCenter[1]+GC_rr*sin(GC_theta*M_PI/180);
       ParPosZ[p] = amr->BoxCenter[2];
       ParVelX[p] = NULL_REAL; // to be set later by Init_User_Density_Profile()
       ParVelY[p] = NULL_REAL;
