@@ -58,7 +58,7 @@ void User_Output();
 // declare as static so that other functions cannot invoke it directly and must use the function pointer
 static void Aux_Record_User_GC();
 // declare as static so that other functions cannot invoke it directly and must use the function pointer
-static void Init_User_Density_Profile();
+static void Init_User_moveGC();
 
 
 //-------------------------------------------------------------------------------------------------------
@@ -284,46 +284,6 @@ for (int i=0; i<radius_size;++i){
 
 
 
-//// Perform the calculations
-//for (int i = 0; i < radius_size; ++i) {
-//	RADIUS[i] = radius[i]; // UNIT_L * cm_to_kpc;
-//}
-//r_mid[0] = 0;
-//for (int i = 0; i < radius_size - 1; ++i) {
-//	r_mid[i + 1] = (RADIUS[i] + RADIUS[i + 1]) / 2;
-//}
-//r_mid[radius_size] = RADIUS[radius_size - 1];
-//for (int i = 0; i < radius_size; ++i) {
-//        volume[i] = (4.0 / 3.0) * M_PI * (pow(r_mid[i + 1], 3) - pow(r_mid[i], 3));
-//        mass[i] = density[i] * volume[i]; // UNIT_D * g_to_Msun / pow(cm_to_kpc, 3) * volume[i];
-//    }
-//
-//double sum_mass = 0;
-//    for (int i = 0; i < radius_size; ++i) {
-//        sum_mass += mass[i];
-//        cumulative_mass[i] = sum_mass;
-//    }
-//
-//int index = 0;
-//double min_diff = std::abs(r_mid[0] - user_input_radius);
-//for (int i = 1; i < radius_size + 1; ++i) {
-//	double diff = std::abs(r_mid[i] - user_input_radius);
-//	if (diff < min_diff) {
-//            min_diff = diff;
-//            index = i;
-//        }
-//
-//}
-//
-//if ( r_mid[index] - user_input_radius < 0){
-//	index += 1;
-//}
-//
-//
-//double m = (cumulative_mass[index] - cumulative_mass[index - 1]) / (r_mid[index] - r_mid[index - 1]);
-//double b = cumulative_mass[index - 1] - m * r_mid[index - 1];
-//double interpolated_mass = m * user_input_radius + b;
-
 //double interpolated_mass_new = interpolate(r_mid, cumulative_mass, radius_size + 1, user_input_radius);
 double interpolated_mass_new = interpolate(radius, cumulative_mass, radius_size, user_input_radius);
 
@@ -532,57 +492,6 @@ void Aux_Record_User_GC()
               fclose( File );
            }
         }
-        if ( OPT__INIT != INIT_BY_RESTART && Time[0]==0.0) 
-        {
-        
-            double* radius = Prof[0]->Radius;
-            double* density = Prof[0]->Data;
-            double* weight = Prof[0]->Weight;
-            int radius_size = Prof[0]->NBin; // Number of bins
-
-            
-            double enclosed_mass = CalculateEnclosedMass(radius, radius_size, density,weight, GC_rr);
-            
-            
-            double vc = sqrt(NEWTON_G * enclosed_mass / GC_rr);
-            
-            double vc_relative = vc * enclosed_mass / (enclosed_mass + GC_mm);
-        
-        if ( MPI_Rank == 0 && Time[0]==0.0) 
-        {
-           Aux_Message(stdout,"[%02d] velocity is %21.14e \n",MPI_Rank,vc);
-        
-           Aux_Message(stdout,"[%02d] enclosed mass is %21.14e \n",MPI_Rank,enclosed_mass);
-           Aux_Message(stdout,"[%02d] radius is %21.14e \n",MPI_Rank,GC_rr);
-           Aux_Message(stdout,"[%02d] Newton G is %21.14e \n",MPI_Rank,NEWTON_G);
-           Aux_Message(stdout,"[%02d] GC Mass is %21.14e \n",MPI_Rank,GC_mm);
-        }        
-        
-        // Set the velocity base on the calculation (only change the velocity)
-        
-        
-
-        if ( Time[0] == 0.0 ) // Change the velocity only when the time is 0
-	{
-         for (long p=0; p<amr->Par->NPar_AcPlusInac; p++)
-           {
-                amr->Par->Mass[p] = GC_mm;
-                amr->Par->PosX[p] = Extrema.Coord[0] + GC_rr*cos(GC_theta*M_PI/180);
-                amr->Par->PosY[p] = Extrema.Coord[1] + GC_rr*sin(GC_theta*M_PI/180);
-                amr->Par->PosZ[p] = Extrema.Coord[2];
-                amr->Par->VelX[p] = -vc*sin(GC_theta*M_PI/180);
-        	amr->Par->VelY[p] = vc*cos(GC_theta*M_PI/180);
-                amr->Par->VelZ[p] = 0.0;
-                Aux_Message(stdout,"Update mass to     ( %21.7e ) \n", amr->Par->Mass[p]);
-                Aux_Message(stdout,"Update position to ( %21.7e , %21.7e , %21.7e ) \n",amr->Par->PosX[p],amr->Par->PosY[p],amr->Par->PosZ[p]);
-                Aux_Message(stdout,"Update velocity to ( %21.7e , %21.7e , %21.7e ) \n",amr->Par->VelX[p],amr->Par->VelY[p],amr->Par->VelZ[p]);
-		
-           }
-        }
-        
-        }
-
-
     }
 
 
@@ -632,7 +541,7 @@ void Aux_Record_User_GC()
 
 
 //-------------------------------------------------------------------------------------------------------
-// Function    :  Init_User_Density_Profile
+// Function    :  Init_User_moveGC
 // Description :  Template of user-defined initialization
 //
 // Note        :  1. Invoked by Init_GAMER() using the function pointer "Init_User_Ptr",
@@ -642,114 +551,118 @@ void Aux_Record_User_GC()
 //
 // Return      :  None
 //-------------------------------------------------------------------------------------------------------
-void Init_User_Density_Profile()
-//void Init_User_Density_Profile( const long NPar_ThisRank, const long NPar_AllRank,
-//                                   real *ParMass, real *ParPosX, real *ParPosY, real *ParPosZ,
-//                                   real *ParVelX, real *ParVelY, real *ParVelZ, real *ParTime,
-//                                   real *ParType, real *AllAttribute[PAR_NATT_TOTAL] )
+void Init_User_moveGC()
 {
 
 if ( MPI_Rank == 0 )    Aux_Message( stdout, "%s ...\n", __FUNCTION__ );
 
-// find the center (base on potential minimum)
+// find the center (base on maximum density)
 
 Extrema_t Extrema;
-Extrema.Field     = _POTE;
-Extrema.Radius = SearchRadius*amr->dh[MAX_LEVEL]; //the cell width of the finest level of resolution in the AMR grid multiply by the searchRadius setting
+Extrema.Field     = _DENS;
+// Extrema.Radius = SearchRadius*amr->dh[MAX_LEVEL]; //the cell width of the finest level of resolution in the AMR grid multiply by the searchRadius setting
+Extrema.Radius = __FLT_MAX__; // Entire Domain
+
 
 Extrema.Center[0] = amr->BoxCenter[0];
 Extrema.Center[1] = amr->BoxCenter[1];
 Extrema.Center[2] = amr->BoxCenter[2];
 
-Aux_FindExtrema( &Extrema, EXTREMA_MIN, 0, TOP_LEVEL, PATCH_LEAF );
+Aux_FindExtrema( &Extrema, EXTREMA_MAX, 0, TOP_LEVEL, PATCH_LEAF );
 
 Halo_Center_x_Initial = Extrema.Coord[0];
 Halo_Center_y_Initial = Extrema.Coord[1];
 Halo_Center_z_Initial = Extrema.Coord[2];
 
 if ( MPI_Rank == 0 ){
-Aux_Message( stdout, "Halo_Center_x_Initial %15.7e \n", Halo_Center_x_Initial);
-Aux_Message( stdout, "Halo_Center_y_Initial %15.7e \n", Halo_Center_y_Initial);
-Aux_Message( stdout, "Halo_Center_z_Initial %15.7e \n", Halo_Center_z_Initial);
+Aux_Message( stdout, "-------------------------------------------\n");
+Aux_Message( stdout, "Max Density x is at : %15.7e \n", Halo_Center_x_Initial);
+Aux_Message( stdout, "Max Density y is at : %15.7e \n", Halo_Center_y_Initial);
+Aux_Message( stdout, "Max Density z is at : %15.7e \n", Halo_Center_z_Initial);
+Aux_Message( stdout, "-------------------------------------------\n");
 }
 
-//// calculate the density profile
-//
-////const double      Center[3]      = { amr->BoxCenter[0], amr->BoxCenter[1], amr->BoxCenter[2] };
-//const double      Center[3]      = { Extrema.Coord[0],Extrema.Coord[1],Extrema.Coord[2] };
-////const double      Center[3]      = { 3.2244973e-02,3.1031996e-02,3.1840648e-02 }; // test for the density profile
-//const double      MaxRadius      = 0.6*amr->BoxSize[0]; // 0.6 to make sure every cell is counted
-//const double      MinBinSize     = amr->dh[MAX_LEVEL];
-//const bool        LogBin         = true;
-//const double      LogBinRatio    = 1.03;
-//const bool        RemoveEmptyBin = false;
-//const long        TVar[]         = { _DENS };
-//const int         NProf          = 1;
-//const int         MinLv          = 0;
-//const int         MaxLv          = MAX_LEVEL;
-//const PatchType_t PatchType      = PATCH_LEAF_PLUS_MAXNONLEAF;
-//const double      PrepTime       = -1.0;
-//
-//Profile_t Prof_Dens;
-//Profile_t *Prof[] = { &Prof_Dens };
-//
-//
-//Aux_ComputeProfile( Prof, Center, MaxRadius, MinBinSize, LogBin, LogBinRatio, RemoveEmptyBin,
-//                    TVar, NProf, MinLv, MaxLv, PatchType, PrepTime );
-//
-//if ( MPI_Rank == 0 )
-//{
-//   for (int p=0; p<NProf; p++)
-//   {
-//      char Filename[MAX_STRING];
-//      sprintf( Filename, "Profile%d.txt", p+1 );
-//      FILE *File = fopen( Filename, "w" );
-//      fprintf( File, "#%19s  %21s  %21s  %10s\n", "Radius", "Data", "Weight", "Cells" );
-//      for (int b=0; b<Prof[p]->NBin; b++)
-//         fprintf( File, "%20.14e  %21.14e  %21.14e  %10ld\n",
-//                  Prof[p]->Radius[b], Prof[p]->Data[b], Prof[p]->Weight[b], Prof[p]->NCell[b] );
-//      fclose( File );
-//   }
-//}
-//
-//if ( OPT__INIT != INIT_BY_RESTART ) 
-//{
-//
-//double* radius = Prof[0]->Radius;
-//double* density = Prof[0]->Data;
-//int radius_size = Prof[0]->NBin; // Number of bins
-//
-//double enclosed_mass = CalculateEnclosedMass(radius, radius_size, density, GC_rr);
-//
-//
-//double vc = sqrt(NEWTON_G * enclosed_mass / GC_rr);
-//
-//double vc_relative = vc * enclosed_mass / (enclosed_mass + GC_mm);
-//
-//if ( MPI_Rank == 0 ) 
-//{
-//   Aux_Message(stdout,"[%02d] velocity is %21.14e \n",MPI_Rank,vc);
-//
-//   Aux_Message(stdout,"[%02d] enclosed mass is %21.14e \n",MPI_Rank,enclosed_mass);
-//   Aux_Message(stdout,"[%02d] radius is %21.14e \n",MPI_Rank,GC_rr);
-//   Aux_Message(stdout,"[%02d] Newton G is %21.14e \n",MPI_Rank,NEWTON_G);
-//   Aux_Message(stdout,"[%02d] GC Mass is %21.14e \n",MPI_Rank,GC_mm);
-//}
-//
-//// Set the velocity base on the calculation (only change the velocity)
-//
-//   for (long p=0; p<amr->Par->NPar_AcPlusInac; p++)
-//   {
-//        amr->Par->VelX[p] = -vc*sin(GC_theta*M_PI/180);
-//	amr->Par->VelY[p] = vc*cos(GC_theta*M_PI/180);
-//        amr->Par->VelZ[p] = 0.0;
-//   }
-//
-//}
+
+// calculate the GC's velocity here
+        double vc ;
+        // update the ideal output t
+        //    Aux_Message(stdout,"[%02d] ideal_output_t is  %21.5f, dt is %21.5f \n",MPI_Rank, ideal_output_t, dTime_AllLv[0]);
+        // Set the velocity base on the calculation (only change the velocity)
+         
+        const double      Center[3]      = { Extrema.Coord[0],Extrema.Coord[1],Extrema.Coord[2] };
+        const double      MaxRadius      = 0.6*amr->BoxSize[0]; // 0.6 to make sure every cell is counted
+        const double      MinBinSize     = amr->dh[MAX_LEVEL];
+        const bool        LogBin         = true;
+        const double      LogBinRatio    = 1.0005;
+        const bool        RemoveEmptyBin = true;
+        const long        TVar[]         = { _DENS };
+        const int         NProf          = 1;
+        const int         MinLv          = 0;
+        const int         MaxLv          = MAX_LEVEL;
+        const PatchType_t PatchType      = PATCH_LEAF_PLUS_MAXNONLEAF;
+        const double      PrepTime       = -1.0;
+
+        Profile_t Prof_Dens;
+        Profile_t *Prof[] = { &Prof_Dens };
+
+
+        Aux_ComputeProfile( Prof, Center, MaxRadius, MinBinSize, LogBin, LogBinRatio, RemoveEmptyBin,
+                            TVar, NProf, MinLv, MaxLv, PatchType, PrepTime );
+        
+        if ( OPT__INIT != INIT_BY_RESTART ) 
+        {
+        
+            double* radius = Prof[0]->Radius;
+            double* density = Prof[0]->Data;
+            double* weight = Prof[0]->Weight;
+            int radius_size = Prof[0]->NBin; // Number of bins
+
+            
+            double enclosed_mass = CalculateEnclosedMass(radius, radius_size, density,weight, GC_rr);
+            
+            
+            vc = sqrt(NEWTON_G * enclosed_mass / GC_rr);
+            
+            double vc_relative = vc * enclosed_mass / (enclosed_mass + GC_mm);
+        
+        if ( MPI_Rank == 0 ) 
+        {
+           Aux_Message(stdout,"[%02d] velocity is %21.14e \n",MPI_Rank,vc);
+        
+           Aux_Message(stdout,"[%02d] enclosed mass is %21.14e \n",MPI_Rank,enclosed_mass);
+           Aux_Message(stdout,"[%02d] radius is %21.14e \n",MPI_Rank,GC_rr);
+           Aux_Message(stdout,"[%02d] Newton G is %21.14e \n",MPI_Rank,NEWTON_G);
+           Aux_Message(stdout,"[%02d] GC Mass is %21.14e \n",MPI_Rank,GC_mm);
+        }        
+        
+        
+        }
+
+
+    
+
+        Aux_Message(stdout, "Total number of particles: %ld\n", amr->Par->NPar_AcPlusInac);
+
+
+        // Final update before possion solver
+        for (long p=0; p<amr->Par->NPar_AcPlusInac; p++)
+           {
+                amr->Par->Mass[p] = GC_mm;
+                amr->Par->PosX[p] = Halo_Center_x_Initial + GC_rr*cos(GC_theta*M_PI/180);
+                amr->Par->PosY[p] = Halo_Center_y_Initial + GC_rr*sin(GC_theta*M_PI/180);
+                amr->Par->PosZ[p] = Halo_Center_z_Initial;
+                amr->Par->VelX[p] = -vc*sin(GC_theta*M_PI/180);
+        	amr->Par->VelY[p] = vc*cos(GC_theta*M_PI/180);
+                amr->Par->VelZ[p] = 0.0;
+                Aux_Message(stdout,"Update mass to     ( %21.7e ) \n", amr->Par->Mass[p]);
+                Aux_Message(stdout,"Update position to ( %21.7e , %21.7e , %21.7e ) \n",amr->Par->PosX[p],amr->Par->PosY[p],amr->Par->PosZ[p]);
+                Aux_Message(stdout,"Update velocity to ( %21.7e , %21.7e , %21.7e ) \n",amr->Par->VelX[p],amr->Par->VelY[p],amr->Par->VelZ[p]);	
+            }
+        
 
    if ( MPI_Rank == 0 )   Aux_Message( stdout, "%s ...done\n", __FUNCTION__ );
 
-} // FUNCTION : Init_User_Density_Profile
+} // FUNCTION : Init_User_moveGC
 
 
 
@@ -794,12 +707,13 @@ void Par_Init_ByFunction( const long NPar_ThisRank, const long NPar_AllRank,
    if ( MPI_Rank == 0 )    Aux_Message( stdout, "%s ...\n", __FUNCTION__ );
    
    for (long p=0; p < NPar_ThisRank; p++)
-   {  
+   {
+      // GUESS the initial   
       ParMass[p] = 1E-10; // to be updated later 
       ParPosX[p] = amr->BoxCenter[0]+GC_rr*cos(GC_theta*M_PI/180);
       ParPosY[p] = amr->BoxCenter[1]+GC_rr*sin(GC_theta*M_PI/180);
       ParPosZ[p] = amr->BoxCenter[2];
-      ParVelX[p] = NULL_REAL; // to be set later by Init_User_Density_Profile()
+      ParVelX[p] = NULL_REAL; // to be set later by Init_User_moveGC
       ParVelY[p] = NULL_REAL;
       ParVelZ[p] = NULL_REAL;
       ParTime[p] = Time[0];
@@ -833,7 +747,7 @@ void Init_TestProb_ELBDM_Dynamical_Friction()
 // set the problem-specific runtime parameters
    SetParameter();
    Aux_Record_User_Ptr     = Aux_Record_User_GC;
-   Init_User_Ptr	   = Init_User_Density_Profile;
+   Init_User_Ptr	   = Init_User_moveGC;
 #  endif
    if ( OPT__INIT != INIT_BY_RESTART )
    {
