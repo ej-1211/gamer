@@ -520,7 +520,7 @@ if ( MPI_Rank == 0 )    Aux_Message( stdout, "%s ...\n", __FUNCTION__ );
 const long NNewPar = ( MPI_Rank == 0 ) ? 1 : 0;
 const long NPar_AllRank = NNewPar;
 real_par *NewParAttFlt[PAR_NATT_FLT_TOTAL];
-long_par *NewParAttFlt[PAR_NATT_INT_TOTAL];
+long_par *NewParAttInt[PAR_NATT_INT_TOTAL];
 
 for (int v=0; v<PAR_NATT_FLT_TOTAL; v++)   NewParAttFlt[v] = new real_par [NNewPar];
 for (int v=0; v<PAR_NATT_INT_TOTAL; v++)   NewParAttInt[v] = new long_par [NNewPar];
@@ -638,9 +638,6 @@ Aux_Message( stdout, "-------------------------------------------\n");
       } // for (long p=0; p<NPar_AllRank; p++)
       
       Aux_Message( stdout, "Setting GC's initial condition...done\n");
-
-//    free memory
-      delete [] ParData_AllRank;
 
    } // if ( MPI_Rank == 0)  
 

@@ -9,7 +9,7 @@
 # To compile GAMER, please set the following configurations properly:
 #
 # (1) simulation options
-# (2) compiler and flags
+# (2) compilers and flags
 # (3) library paths
 # ===========================================================================
 
@@ -29,7 +29,7 @@ COMPILE_VERBOSE := 0
 
 # simulation options
 #######################################################################################################
-SIMU_OPTION  = -DMODEL=ELBDM -DNCOMP_PASSIVE_USER=0 -DELBDM_SCHEME=ELBDM_WAVE -DWAVE_SCHEME=WAVE_FD -DCONSERVE_MASS -DLAPLACIAN_4TH -DGRAVITY -DPOT_SCHEME=SOR -DSTORE_POT_GHOST -DPARTICLE -DSTORE_PAR_ACC -DPAR_NATT_USER=0 -DNLEVEL=10 -DMAX_PATCH=1000000 -DPATCH_SIZE=8 -DTIMING -DSUPPORT_HDF5 -DSUPPORT_GSL -DSUPPORT_FFTW=FFTW3 -DRANDOM_NUMBER=RNG_GNU_EXT -DOPENMP -DLOAD_BALANCE=HILBERT -DGPU 
+SIMU_OPTION  = -DMODEL=ELBDM -DNCOMP_PASSIVE_USER=0 -DELBDM_SCHEME=ELBDM_WAVE -DWAVE_SCHEME=WAVE_FD -DCONSERVE_MASS -DLAPLACIAN_4TH -DGRAVITY -DPOT_SCHEME=SOR -DSTORE_POT_GHOST -DPARTICLE -DSTORE_PAR_ACC -DPAR_NATT_FLT_USER=0 -DPAR_NATT_INT_USER=0 -DFLOAT8_PAR -DINT8_PAR -DNLEVEL=10 -DMAX_PATCH=1000000 -DPATCH_SIZE=8 -DTIMING -DSUPPORT_HDF5 -DSUPPORT_GSL -DSUPPORT_FFTW=FFTW3 -DRANDOM_NUMBER=RNG_GNU_EXT -DOPENMP -DLOAD_BALANCE=HILBERT -DGPU 
 SIMU_OPTION += -DGPU_COMPUTE_CAPABILITY=860
 
 
@@ -111,7 +111,8 @@ CPU_FILE    += Output_DumpData_Total.cpp  Output_DumpData.cpp  Output_DumpManual
                Output_DumpData_Total_HDF5.cpp  Output_L1Error.cpp  Output_UserWorkBeforeOutput.cpp
 
 CPU_FILE    += Flag_Real.cpp  Refine.cpp   SiblingSearch.cpp  SiblingSearch_Base.cpp  FindFather.cpp \
-               Flag_User.cpp  Flag_Check.cpp  Flag_Lohner.cpp  Flag_Region.cpp  Sync_UseWaveFlag.cpp
+               Flag_User.cpp  Flag_Check.cpp  Flag_Lohner.cpp  Flag_Region.cpp  Sync_UseWaveFlag.cpp \
+	       Flag_UserWorkBeforeFlag.cpp
 
 CPU_FILE    += Table_01.cpp  Table_02.cpp  Table_03.cpp  Table_04.cpp  Table_05.cpp  Table_06.cpp \
                Table_07.cpp  Table_SiblingSharingSameEdge.cpp  Table_SiblingPatch.cpp
@@ -232,7 +233,8 @@ CPU_FILE    += Par_Init_ByFunction.cpp  Par_Output_TextFile.cpp  Par_Output_Bina
                Par_Aux_InitCheck.cpp  Par_Aux_Record_ParticleCount.cpp  Par_PassParticle2Son_MultiPatch.cpp \
                Par_Synchronize.cpp  Par_PredictPos.cpp  Par_Init_ByFile.cpp  Par_Init_Attribute.cpp \
                Par_AddParticleAfterInit.cpp  Par_PassParticle2Son_SinglePatch.cpp  Par_EquilibriumIC.cpp \
-               Par_ScatterParticleData.cpp  Par_UpdateTracerParticle.cpp  Par_MapMesh2Particles.cpp
+               Par_ScatterParticleData.cpp  Par_UpdateTracerParticle.cpp  Par_MapMesh2Particles.cpp \
+               Par_Init_Attribute_Mesh.cpp  Par_Output_TracerParticle_Mesh.cpp
 
 vpath %.cu     Particle/GPU
 vpath %.cpp    Particle/CPU  Particle
@@ -407,7 +409,7 @@ endif
 # -------------------------------------------------------------------------------
 ifeq "$(filter -DGPU, $(SIMU_OPTION))" "-DGPU"
 LIB += -L$(CUDA_PATH)/lib64
-LIB += -Wl,-rpath=$(CUDA_PATH)/lib64
+LIB += -Wl,-rpath,$(CUDA_PATH)/lib64
 LIB += -lcudart
 endif
 
@@ -417,7 +419,7 @@ endif
 
 ifeq "$(filter -DSUPPORT_FFTW=FFTW3, $(SIMU_OPTION))" "-DSUPPORT_FFTW=FFTW3"
    LIB += -L$(FFTW3_PATH)/lib
-   LIB += -Wl,-rpath=$(FFTW3_PATH)/lib
+   LIB += -Wl,-rpath,$(FFTW3_PATH)/lib
    ifeq "$(filter -DSERIAL, $(SIMU_OPTION))" "-DSERIAL"
       LIB += -lfftw3 -lfftw3f -lm
    else
@@ -431,7 +433,7 @@ endif
 
 ifeq "$(filter -DSUPPORT_FFTW=FFTW2, $(SIMU_OPTION))" "-DSUPPORT_FFTW=FFTW2"
    LIB += -L$(FFTW2_PATH)/lib
-   LIB += -Wl,-rpath=$(FFTW2_PATH)/lib
+   LIB += -Wl,-rpath,$(FFTW2_PATH)/lib
    ifeq "$(filter -DFLOAT8, $(SIMU_OPTION))" "-DFLOAT8"
       ifeq "$(filter -DSERIAL, $(SIMU_OPTION))" "-DSERIAL"
          LIB += -ldrfftw -ldfftw
@@ -449,22 +451,22 @@ endif
 
 ifeq "$(filter -DSUPPORT_GRACKLE, $(SIMU_OPTION))" "-DSUPPORT_GRACKLE"
 LIB += -L$(GRACKLE_PATH)/lib -lgrackle
-LIB += -Wl,-rpath=$(GRACKLE_PATH)/lib
+LIB += -Wl,-rpath,$(GRACKLE_PATH)/lib
 endif
 
 ifeq "$(filter -DSUPPORT_HDF5, $(SIMU_OPTION))" "-DSUPPORT_HDF5"
 LIB += -L$(HDF5_PATH)/lib -lhdf5
-LIB += -Wl,-rpath=$(HDF5_PATH)/lib
+LIB += -Wl,-rpath,$(HDF5_PATH)/lib
 endif
 
 ifeq "$(filter -DSUPPORT_GSL, $(SIMU_OPTION))" "-DSUPPORT_GSL"
 LIB += -L$(GSL_PATH)/lib -lgsl -lgslcblas
-LIB += -Wl,-rpath=$(GSL_PATH)/lib
+LIB += -Wl,-rpath,$(GSL_PATH)/lib
 endif
 
 ifeq "$(filter -DSUPPORT_LIBYT, $(SIMU_OPTION))" "-DSUPPORT_LIBYT"
 LIB += -L$(LIBYT_PATH)/lib -lyt
-LIB += -Wl,-rpath=$(LIBYT_PATH)/lib
+LIB += -Wl,-rpath,$(LIBYT_PATH)/lib
 endif
 
 
