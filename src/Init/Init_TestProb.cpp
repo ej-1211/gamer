@@ -44,6 +44,7 @@ void Init_TestProb_ELBDM_LSS();
 void Init_TestProb_ELBDM_PlaneWave();
 void Init_TestProb_ELBDM_Perturbation();
 void Init_TestProb_ELBDM_HaloMerger();
+void Init_TestProb_ELBDM_DiskHeating();
 void Init_TestProb_ELBDM_Dynamical_Friction();
 
 
@@ -109,7 +110,11 @@ void Init_TestProb()
       case TESTPROB_ELBDM_PLANE_WAVE :                   Init_TestProb_ELBDM_PlaneWave();                   break;
       case TESTPROB_ELBDM_PERTURBATION :                 Init_TestProb_ELBDM_Perturbation();                break;
       case TESTPROB_ELBDM_HALO_MERGER :                  Init_TestProb_ELBDM_HaloMerger();                  break;
+<<<<<<< HEAD
       case TESTPROB_ELBDM_DYNAMICAL_FRICTION:            Init_TestProb_ELBDM_Dynamical_Friction();                break;
+=======
+      case TESTPROB_ELBDM_DISK_HEATING :                 Init_TestProb_ELBDM_DiskHeating();                 break;
+>>>>>>> origin/main
 
       default: Aux_Error( ERROR_INFO, "unsupported TESTPROB_ID (%d) !!\n", TESTPROB_ID );
    } // switch( TESTPROB_ID )

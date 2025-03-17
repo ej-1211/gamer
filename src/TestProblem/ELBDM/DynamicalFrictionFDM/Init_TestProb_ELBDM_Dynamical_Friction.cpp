@@ -45,10 +45,6 @@ Profile_t *Prof_[1];
 
 
 //// problem-specific function prototypes
-static void Par_Init_ByFunction( const long NPar_ThisRank, const long NPar_AllRank,
-                                   real *ParMass, real *ParPosX, real *ParPosY, real *ParPosZ,
-                                   real *ParVelX, real *ParVelY, real *ParVelZ, real *ParTime,
-                                   real *ParType, real *AllAttribute[PAR_NATT_TOTAL] );
 
 
 void Mis_UserWorkBeforeNextLevel_Find_GC( const int lv, const double TimeNew, const double TimeOld, const double dt );
@@ -499,41 +495,6 @@ void Aux_Record_User_GC()
 
 } // FUNCTION : Aux_Record_User_GC
 
-//-------------------------------------------------------------------------------------------------------
-// Function    :  SetGridIC
-// Description :  Set the problem-specific initial condition on grids
-//
-// Note        :  1. This function may also be used to estimate the numerical errors when OPT__OUTPUT_USER is enabled
-//                   --> In this case, it should provide the analytical solution at the given "Time"
-//                2. This function will be invoked by multiple OpenMP threads when OPENMP is enabled
-//                   --> Please ensure that everything here is thread-safe
-//                3. Even when DUAL_ENERGY is adopted for HYDRO, one does NOT need to set the dual-energy variable here
-//                   --> It will be calculated automatically
-//
-// Parameter   :  fluid    : Fluid field to be initialized
-//                x/y/z    : Physical coordinates
-//                Time     : Physical time
-//                lv       : Target refinement level
-//                AuxArray : Auxiliary array
-//
-// Return      :  fluid
-//-------------------------------------------------------------------------------------------------------
-//void SetGridIC( real fluid[], const double x, const double y, const double z, const double Time,
-//                const int lv, double AuxArray[] )
-//{
-//
-//   fluid[DENS] = GC_SmallGas;
-//   fluid[MOMX] = 0;
-//   fluid[MOMY] = 0;
-//   fluid[MOMZ] = 0;
-//#  ifdef GRAVITY
-//   fluid[ENGY] = GC_SmallGas;
-//#  endif
-//
-//// just set all passive scalars as zero
-//   for (int v=NCOMP_FLUID; v<NCOMP_TOTAL; v++)  fluid[v] = 0.0;
-//
-//} // FUNCTION : SetGridIC
 #endif // #if ( MODEL == HYDRO )
 
 
@@ -555,6 +516,23 @@ void Init_User_moveGC()
 {
 
 if ( MPI_Rank == 0 )    Aux_Message( stdout, "%s ...\n", __FUNCTION__ );
+
+const long NNewPar = ( MPI_Rank == 0 ) ? 1 : 0;
+const long NPar_AllRank = NNewPar;
+real_par *NewParAttFlt[PAR_NATT_FLT_TOTAL];
+long_par *NewParAttFlt[PAR_NATT_INT_TOTAL];
+
+for (int v=0; v<PAR_NATT_FLT_TOTAL; v++)   NewParAttFlt[v] = new real_par [NNewPar];
+for (int v=0; v<PAR_NATT_INT_TOTAL; v++)   NewParAttInt[v] = new long_par [NNewPar];
+
+// set particle attributes
+real_par *Time_AllRank   =   NewParAttFlt[PAR_TIME];
+real_par *Mass_AllRank   =   NewParAttFlt[PAR_MASS];
+real_par *Pos_AllRank[3] = { NewParAttFlt[PAR_POSX], NewParAttFlt[PAR_POSY], NewParAttFlt[PAR_POSZ] };
+real_par *Vel_AllRank[3] = { NewParAttFlt[PAR_VELX], NewParAttFlt[PAR_VELY], NewParAttFlt[PAR_VELZ] };
+long_par *Type_AllRank   =   NewParAttInt[PAR_TYPE];
+                
+
 
 // find the center (base on maximum density)
 
@@ -640,88 +618,74 @@ Aux_Message( stdout, "-------------------------------------------\n");
 
 
     
+   
 
-        Aux_Message(stdout, "Total number of particles: %ld\n", amr->Par->NPar_AcPlusInac);
+   if ( MPI_Rank == 0 ){
+      Aux_Message( stdout, "Setting GC's initial condition...\n");
+      for (long p=0; p<NPar_AllRank; p++)
+      {
+         Time_AllRank[p] = Time[0];
+         Mass_AllRank[p] = GC_mm;
+         Type_AllRank[p] = PTYPE_GC;
+         // Position
+         Pos_AllRank[0][p] = Halo_Center_x_Initial + GC_rr*cos(GC_theta*M_PI/180);
+         Pos_AllRank[1][p] = Halo_Center_y_Initial + GC_rr*sin(GC_theta*M_PI/180);
+         Pos_AllRank[2][p] = Halo_Center_z_Initial;
+         // Velocity
+         Vel_AllRank[0][p] = -vc*sin(GC_theta*M_PI/180);
+         Vel_AllRank[1][p] = vc*cos(GC_theta*M_PI/180);
+         Vel_AllRank[2][p] = 0.0;
+      } // for (long p=0; p<NPar_AllRank; p++)
+      
+      Aux_Message( stdout, "Setting GC's initial condition...done\n");
+
+//    free memory
+      delete [] ParData_AllRank;
+
+   } // if ( MPI_Rank == 0)  
 
 
-        // Final update before possion solver
-        for (long p=0; p<amr->Par->NPar_AcPlusInac; p++)
-           {
-                amr->Par->Mass[p] = GC_mm;
-                amr->Par->PosX[p] = Halo_Center_x_Initial + GC_rr*cos(GC_theta*M_PI/180);
-                amr->Par->PosY[p] = Halo_Center_y_Initial + GC_rr*sin(GC_theta*M_PI/180);
-                amr->Par->PosZ[p] = Halo_Center_z_Initial;
-                amr->Par->VelX[p] = -vc*sin(GC_theta*M_PI/180);
-        	amr->Par->VelY[p] = vc*cos(GC_theta*M_PI/180);
-                amr->Par->VelZ[p] = 0.0;
-                Aux_Message(stdout,"Update mass to     ( %21.7e ) \n", amr->Par->Mass[p]);
-                Aux_Message(stdout,"Update position to ( %21.7e , %21.7e , %21.7e ) \n",amr->Par->PosX[p],amr->Par->PosY[p],amr->Par->PosZ[p]);
-                Aux_Message(stdout,"Update velocity to ( %21.7e , %21.7e , %21.7e ) \n",amr->Par->VelX[p],amr->Par->VelY[p],amr->Par->VelZ[p]);	
-            }
-        
+// add particles here
+   Par_AddParticleAfterInit( NNewPar, NewParAttFlt, NewParAttInt );
+   
+// free memory
+   for (int v=0; v<PAR_NATT_FLT_TOTAL; v++)   delete [] NewParAttFlt[v];
+   for (int v=0; v<PAR_NATT_INT_TOTAL; v++)   delete [] NewParAttInt[v];    
+
 
    if ( MPI_Rank == 0 )   Aux_Message( stdout, "%s ...done\n", __FUNCTION__ );
+
+#  if ( defined PARTICLE  &&  defined LOAD_BALANCE )
+   const double Par_Weight = amr->LB->Par_Weight;
+#  else
+   const double Par_Weight = 0.0;
+#  endif
+#  ifdef LOAD_BALANCE
+   const UseLBFunc_t UseLB = USELB_YES;
+#  else
+   const UseLBFunc_t UseLB = USELB_NO;
+#  endif
+
+   for (int lv=0; lv<MAX_LEVEL; lv++)
+   {
+      if ( MPI_Rank == 0 )    Aux_Message( stdout, "   Refining level %d ...\n", lv );
+
+      Flag_Real( lv, UseLB );
+
+      Refine( lv, UseLB );
+
+#     ifdef LOAD_BALANCE
+      LB_Init_LoadBalance( true, true, Par_Weight, true, false, lv+1 );
+#     endif
+
+      if ( MPI_Rank == 0 )    Aux_Message( stdout, "   Refining level %d ... done\n", lv );
+   } // for (int lv=OPT__UM_IC_LEVEL; lv<MAX_LEVEL; lv++)
+
 
 } // FUNCTION : Init_User_moveGC
 
 
 
-
-//-------------------------------------------------------------------------------------------------------
-// Function    :  Par_Init_ByFunction_Template
-// Description :  Template of user-specified particle initializer
-//
-// Note        :  1. Invoked by Init_GAMER() using the function pointer "Par_Init_ByFunction_Ptr",
-//                   which must be set by a test problem initializer
-//                2. Periodicity should be taken care of in this function
-//                   --> No particles should lie outside the simulation box when the periodic BC is adopted
-//                   --> However, if the non-periodic BC is adopted, particles are allowed to lie outside the box
-//                       (more specifically, outside the "active" region defined by amr->Par->RemoveCell)
-//                       in this function. They will later be removed automatically when calling Par_Aux_InitCheck()
-//                       in Init_GAMER().
-//                3. Particles set by this function are only temporarily stored in this MPI rank
-//                   --> They will later be redistributed when calling Par_FindHomePatch_UniformGrid()
-//                       and LB_Init_LoadBalance()
-//                   --> Therefore, there is no constraint on which particles should be set by this function
-//
-// Parameter   :  NPar_ThisRank : Number of particles to be set by this MPI rank
-//                NPar_AllRank  : Total Number of particles in all MPI ranks
-//                ParMass       : Particle mass     array with the size of NPar_ThisRank
-//                ParPosX/Y/Z   : Particle position array with the size of NPar_ThisRank
-//                ParVelX/Y/Z   : Particle velocity array with the size of NPar_ThisRank
-//                ParTime       : Particle time     array with the size of NPar_ThisRank
-//                ParType       : Particle type     array with the size of NPar_ThisRank
-//                AllAttribute  : Pointer array for all particle attributes
-//                                --> Dimension = [PAR_NATT_TOTAL][NPar_ThisRank]
-//                                --> Use the attribute indices defined in Field.h (e.g., Idx_ParCreTime)
-//                                    to access the data
-//
-// Return      :  ParMass, ParPosX/Y/Z, ParVelX/Y/Z, ParTime, ParType, AllAttribute
-//-------------------------------------------------------------------------------------------------------
-void Par_Init_ByFunction( const long NPar_ThisRank, const long NPar_AllRank,
-                                   real *ParMass, real *ParPosX, real *ParPosY, real *ParPosZ,
-                                   real *ParVelX, real *ParVelY, real *ParVelZ, real *ParTime,
-                                   real *ParType, real *AllAttribute[PAR_NATT_TOTAL] )
-{
-
-   if ( MPI_Rank == 0 )    Aux_Message( stdout, "%s ...\n", __FUNCTION__ );
-   
-   for (long p=0; p < NPar_ThisRank; p++)
-   {
-      // GUESS the initial   
-      ParMass[p] = 1E-10; // to be updated later 
-      ParPosX[p] = amr->BoxCenter[0]+GC_rr*cos(GC_theta*M_PI/180);
-      ParPosY[p] = amr->BoxCenter[1]+GC_rr*sin(GC_theta*M_PI/180);
-      ParPosZ[p] = amr->BoxCenter[2];
-      ParVelX[p] = NULL_REAL; // to be set later by Init_User_moveGC
-      ParVelY[p] = NULL_REAL;
-      ParVelZ[p] = NULL_REAL;
-      ParTime[p] = Time[0];
-      ParType[p] = PTYPE_GC;
-   }
-   if ( MPI_Rank == 0 )    Aux_Message( stdout, "%s ... done\n", __FUNCTION__ );
-
-} // FUNCTION : Par_Init_ByFunction
 
 
 //-------------------------------------------------------------------------------------------------------
@@ -749,10 +713,6 @@ void Init_TestProb_ELBDM_Dynamical_Friction()
    Aux_Record_User_Ptr     = Aux_Record_User_GC;
    Init_User_Ptr	   = Init_User_moveGC;
 #  endif
-   if ( OPT__INIT != INIT_BY_RESTART )
-   {
-   Par_Init_ByFunction_Ptr = Par_Init_ByFunction;
-   }
    if ( MPI_Rank == 0 )    Aux_Message( stdout, "%s ... done\n", __FUNCTION__ );
 
 } // FUNCTION : Init_TestProb_Hydro_GC
