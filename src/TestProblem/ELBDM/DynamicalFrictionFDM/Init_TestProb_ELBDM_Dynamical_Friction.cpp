@@ -7,6 +7,10 @@
 #include <cmath>
 using namespace std;
 
+
+
+// problem-specific global variables
+// =======================================================================================
 // negligibly small uniform density and energy
 double GC_SmallGas;
 
@@ -42,6 +46,9 @@ double output_profile_dt;
 // declare the radius and density information
 // declare a global variable for the profile
 Profile_t *Prof_[1];
+// =======================================================================================
+
+
 
 
 //// problem-specific function prototypes
@@ -125,6 +132,64 @@ void Validate()
 
 #if ( MODEL == ELBDM && defined GRAVITY )
 //-------------------------------------------------------------------------------------------------------
+// Function    :  LoadInputTestProb
+// Description :  Read problem-specific runtime parameters from Input__TestProb and store them in HDF5 snapshots (Data_*)
+//
+// Note        :  1. Invoked by SetParameter() to read parameters
+//                2. Invoked by Output_DumpData_Total_HDF5() using the function pointer Output_HDF5_InputTest_Ptr to store parameters
+//                3. If there is no problem-specific runtime parameter to load, add at least one parameter
+//                   to prevent an empty structure in HDF5_Output_t
+//                   --> Example:
+//                       LOAD_PARA( load_mode, "TestProb_ID", &TESTPROB_ID, TESTPROB_ID, TESTPROB_ID, TESTPROB_ID );
+//
+// Parameter   :  load_mode      : Mode for loading parameters
+//                                 --> LOAD_READPARA    : Read parameters from Input__TestProb
+//                                     LOAD_HDF5_OUTPUT : Store parameters in HDF5 snapshots
+//                ReadPara       : Data structure for reading parameters (used with LOAD_READPARA)
+//                HDF5_InputTest : Data structure for storing parameters in HDF5 snapshots (used with LOAD_HDF5_OUTPUT)
+//
+// Return      :  None
+//-------------------------------------------------------------------------------------------------------
+void LoadInputTestProb( const LoadParaMode_t load_mode, ReadPara_t *ReadPara, HDF5_Output_t *HDF5_InputTest )
+{
+
+#  ifndef SUPPORT_HDF5
+   if ( load_mode == LOAD_HDF5_OUTPUT )   Aux_Error( ERROR_INFO, "please turn on SUPPORT_HDF5 in the Makefile for load_mode == LOAD_HDF5_OUTPUT !!\n" );
+#  endif
+
+   if ( load_mode == LOAD_READPARA     &&  ReadPara       == NULL )   Aux_Error( ERROR_INFO, "load_mode == LOAD_READPARA and ReadPara == NULL !!\n" );
+   if ( load_mode == LOAD_HDF5_OUTPUT  &&  HDF5_InputTest == NULL )   Aux_Error( ERROR_INFO, "load_mode == LOAD_HDF5_OUTPUT and HDF5_InputTest == NULL !!\n" );
+
+// add parameters in the following format:
+// --> note that VARIABLE, DEFAULT, MIN, and MAX must have the same data type
+// --> some handy constants (e.g., NoMin_int, Eps_float, ...) are defined in "include/ReadPara.h"
+// --> LOAD_PARA() is defined in "include/TestProb.h"
+// ********************************************************************************************************************************
+// LOAD_PARA( load_mode, "KEY_IN_THE_FILE",         &VARIABLE,                DEFAULT,       MIN,              MAX               );
+// ********************************************************************************************************************************
+
+ // Load parameters
+   LOAD_PARA( load_mode, "GC_SmallGas",             &GC_SmallGas,             1e-10,         0.0,              NoMax_double      );
+   LOAD_PARA( load_mode, "GC_POSX",                 &GC_xx,                   NoDef_double,  NoMin_double,     NoMax_double      );
+   LOAD_PARA( load_mode, "GC_POSY",                 &GC_yy,                   NoDef_double,  NoMin_double,     NoMax_double      );
+   LOAD_PARA( load_mode, "GC_POSZ",                 &GC_zz,                   NoDef_double,  NoMin_double,     NoMax_double      );
+   LOAD_PARA( load_mode, "GC_MASS",                 &GC_mm,                   NoDef_double,  NoMin_double,     NoMax_double      );
+   LOAD_PARA( load_mode, "GC_RADIUS",               &GC_rr,                   NoDef_double,  NoMin_double,     NoMax_double      );
+   LOAD_PARA( load_mode, "GC_ANGLE",                &GC_theta,                0.0,           0.0,              360.0             );
+   LOAD_PARA( load_mode, "FIX_CENTER",              &FixCenter,               Useless_bool,  Useless_bool,     Useless_bool      );
+   LOAD_PARA( load_mode, "SEARCH_RADIUS",           &SearchRadius,            NoDef_double,  NoMin_double,     NoMax_double      );
+   LOAD_PARA( load_mode, "previous_center_x",       &previous_center_x,       NoDef_double,  NoMin_double,     NoMax_double      );
+   LOAD_PARA( load_mode, "previous_center_y",       &previous_center_y,       NoDef_double,  NoMin_double,     NoMax_double      );
+   LOAD_PARA( load_mode, "previous_center_z",       &previous_center_z,       NoDef_double,  NoMin_double,     NoMax_double      );
+   LOAD_PARA( load_mode, "Output_Profile_DT",       &output_profile_dt,       NoDef_double,  NoMin_double,     NoMax_double      );
+
+} // FUNCITON : LoadInputTestProb
+
+
+
+
+
+//-------------------------------------------------------------------------------------------------------
 // Function    :  SetParameter
 // Description :  Load and set the problem-specific runtime parameters
 //
@@ -141,6 +206,30 @@ void Validate()
 //-------------------------------------------------------------------------------------------------------
 void SetParameter()
 {
+   if ( MPI_Rank == 0 )    Aux_Message( stdout, "   Setting runtime parameters ...\n" );
+
+// (1) load the problem-specific runtime parameters
+// (1-1) read parameters from Input__TestProb
+   const char FileName[] = "Input__TestProb";
+   ReadPara_t *ReadPara  = new ReadPara_t;
+
+   LoadInputTestProb( LOAD_READPARA, ReadPara, NULL );
+
+   ReadPara->Read( FileName );
+
+   delete ReadPara;
+
+// (1-2) set the default values
+
+// (1-3) check the runtime parameters
+   if ( OPT__INIT == INIT_BY_FUNCTION )
+       Aux_Error( ERROR_INFO, "OPT__INIT=1 is not supported for this test problem !!\n" );
+
+
+// (2) set the problem-specific derived parameters
+
+
+// (3) reset other general-purpose parameters
 //     --> a helper macro PRINT_WARNING is defined in TestProb.h
    const long   End_Step_Default = __INT_MAX__;
    const double End_T_Default    =  10;
@@ -155,40 +244,27 @@ void SetParameter()
    }
 
 // load run-time parameters
-   const char* FileName = "Input__TestProb";
-   ReadPara_t *ReadPara  = new ReadPara_t;
-   // ********************************************************************************************************************************
-   // ReadPara->Add( "KEY_IN_THE_FILE",      &VARIABLE,              DEFAULT,       MIN,              MAX               );
-   // ********************************************************************************************************************************
-   ReadPara->Add( "GC_SmallGas",             &GC_SmallGas,           1e-10,          0.,               NoMax_double      );
 
-   ReadPara->Add( "GC_POSX",                 &GC_xx,               NoDef_double,  NoMin_double,     NoMax_double      );
-   ReadPara->Add( "GC_POSY",                 &GC_yy,               NoDef_double,  NoMin_double,     NoMax_double      );
-   ReadPara->Add( "GC_POSZ",                 &GC_zz,               NoDef_double,  NoMin_double,     NoMax_double      );
-  
-   ReadPara->Add( "GC_MASS",               &GC_mm,               NoDef_double,  NoMin_double,     NoMax_double      );
-   ReadPara->Add( "GC_RADIUS",               &GC_rr,               NoDef_double,  NoMin_double,     NoMax_double      );
-   ReadPara->Add( "GC_ANGLE",                &GC_theta,                0.0,         0.0,                   360.0      );
-   
-
-   ReadPara->Add( "FIX_CENTER",              &FixCenter,             Useless_bool,  Useless_bool,     Useless_bool      );
-   ReadPara->Add( "SEARCH_RADIUS",           &SearchRadius,        NoDef_double,  NoMin_double,     NoMax_double      );
-   ReadPara->Add( "previous_center_x",           &previous_center_x,        NoDef_double,  NoMin_double,     NoMax_double      );
-   ReadPara->Add( "previous_center_y",           &previous_center_y,        NoDef_double,  NoMin_double,     NoMax_double      );
-   ReadPara->Add( "previous_center_z",           &previous_center_z,        NoDef_double,  NoMin_double,     NoMax_double      );
-   ReadPara->Add( "Output_Profile_DT",           &output_profile_dt,        NoDef_double,  NoMin_double,     NoMax_double      );
-
-   ReadPara->Read( FileName );
-   delete ReadPara;
-// (1-3) check the runtime parameters
-   if ( OPT__INIT == INIT_BY_FUNCTION )
-       Aux_Error( ERROR_INFO, "OPT__INIT=1 is not supported for this test problem !!\n" );
 // (4) make a note
    if ( MPI_Rank == 0 )
       {
 	Aux_Message( stdout, "=============================================================================\n" );
 	Aux_Message( stdout, "  test problem ID = %d\n", TESTPROB_ID         );
 	Aux_Message( stdout, "=============================================================================\n" );
+        Aux_Message(stdout, "  GC_SmallGas      = %13.7e\n", GC_SmallGas);
+        Aux_Message(stdout, "  GC_POSX          = %13.7e\n", GC_xx);
+        Aux_Message(stdout, "  GC_POSY          = %13.7e\n", GC_yy);
+        Aux_Message(stdout, "  GC_POSZ          = %13.7e\n", GC_zz);
+        Aux_Message(stdout, "  GC_MASS          = %13.7e\n", GC_mm);
+        Aux_Message(stdout, "  GC_RADIUS        = %13.7e\n", GC_rr);
+        Aux_Message(stdout, "  GC_ANGLE         = %13.7e\n", GC_theta);
+        Aux_Message(stdout, "  FIX_CENTER       = %d\n", FixCenter);
+        Aux_Message(stdout, "  SEARCH_RADIUS    = %13.7e\n", SearchRadius);
+        Aux_Message(stdout, "  previous_center_x= %13.7e\n", previous_center_x);
+        Aux_Message(stdout, "  previous_center_y= %13.7e\n", previous_center_y);
+        Aux_Message(stdout, "  previous_center_z= %13.7e\n", previous_center_z);
+        Aux_Message(stdout, "  Output_Profile_DT= %13.7e\n", output_profile_dt);
+        Aux_Message(stdout, "=============================================================================\n");
       }
 
 
@@ -197,6 +273,10 @@ void SetParameter()
 
 
 } // FUNCTION : SetParameter
+
+
+
+
 
 //-------------------------------------------------------------------------------------------------------
 // Function    :  AdjustGCPotential()
@@ -753,12 +833,16 @@ void Init_TestProb_ELBDM_Dynamical_Friction()
 // validate the compilation flags and runtime parameters
    Validate();
 
+
 #  if ( MODEL == ELBDM && defined GRAVITY )
 // set the problem-specific runtime parameters
    SetParameter();
    Aux_Record_User_Ptr     = Aux_Record_User_GC;
    Init_User_Ptr	   = Init_User_moveGC;
    Par_Init_ByFunction_Ptr = Par_Init_ByFunction;
+#  endif
+#  ifdef SUPPORT_HDF5
+   Output_HDF5_InputTest_Ptr  = LoadInputTestProb;
 #  endif
    if ( MPI_Rank == 0 )    Aux_Message( stdout, "%s ... done\n", __FUNCTION__ );
 
